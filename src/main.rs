@@ -1,3 +1,6 @@
+mod room;
+mod smart_xml;
+
 use std::{
     fmt::Display,
     path::{Path, PathBuf},
@@ -7,20 +10,30 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use git2::Repository;
 use iced::{
-    Element, Size, Task,
-    widget::{ComboBox, column, combo_box, row, text},
+    Element, Length, Size, Task,
+    widget::{self, ComboBox, column, combo_box, image, row, text},
 };
-use log::error;
+use log::{error, info};
+
+use crate::room::{LocalFileSystem, render_room};
 
 #[derive(Parser)]
 struct Args {
     reference: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
 struct Project(PathBuf);
-
 type Room = String;
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
+struct RoomState(usize, String);
+
+impl Display for RoomState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.0, self.1)
+    }
+}
 
 struct State {
     args: Args,
@@ -29,6 +42,15 @@ struct State {
     project: Project,
     room_list: combo_box::State<String>,
     room: String,
+    room_state_list: combo_box::State<RoomState>,
+    room_state: RoomState,
+    working_images: Option<RoomData>,
+    other_images: Option<RoomData>,
+}
+
+struct RoomData {
+    layer1: Vec<image::Handle>,
+    layer2: Vec<image::Handle>,
 }
 
 impl Display for Project {
@@ -83,8 +105,14 @@ fn get_initial_state() -> Result<State> {
         project_list: combo_box::State::new(projects),
         room_list: combo_box::State::new(vec![]),
         room: String::new(),
+        room_state_list: combo_box::State::new(vec![]),
+        room_state: RoomState(0, String::new()),
+        working_images: None,
+        other_images: None,
     };
     refresh_room_list(&mut state)?;
+    refresh_room_images(&mut state)?;
+
     Ok(state)
 }
 
@@ -110,14 +138,45 @@ fn refresh_room_list(state: &mut State) -> Result<()> {
     Ok(())
 }
 
+fn convert_images(images: Vec<room::Image>) -> Vec<image::Handle> {
+    images
+        .into_iter()
+        .map(|x| image::Handle::from_rgba(x.width as u32, x.height as u32, x.pixels))
+        .collect()
+}
+
+fn refresh_room_images(state: &mut State) -> Result<()> {
+    let working_fs = LocalFileSystem {};
+    let working_images = render_room(&state.project.0, &state.room, &working_fs)?;
+    let room_states: Vec<RoomState> = working_images
+        .room_state_names
+        .into_iter()
+        .enumerate()
+        .map(|(i, x)| RoomState(i, x))
+        .collect();
+    if room_states.len() == 0 {
+        bail!("Empty list of room states");
+    }
+    state.room_state = room_states[0].clone();
+    state.room_state_list = combo_box::State::new(room_states);
+    state.working_images = Some(RoomData {
+        layer1: convert_images(working_images.layer1),
+        layer2: convert_images(working_images.layer2),
+    });
+    info!("refreshed room images");
+    Ok(())
+}
+
 fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
     match message {
         Message::SelectProject(project) => {
             state.project = project;
             refresh_room_list(state)?;
+            refresh_room_images(state)?;
         }
         Message::SelectRoom(room) => {
             state.room = room;
+            refresh_room_images(state)?;
         }
     }
     Ok(Task::none())
@@ -134,7 +193,8 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 }
 
 fn view(state: &State) -> Element<Message> {
-    column![
+    let mut column = widget::Column::new();
+    column = column.push(
         row![
             combo_box(
                 &state.project_list,
@@ -149,10 +209,19 @@ fn view(state: &State) -> Element<Message> {
                 Message::SelectRoom,
             ),
         ]
-        .spacing(10)
-        .padding(10)
-    ]
-    .into()
+        .spacing(10),
+    );
+    if let Some(images) = &state.working_images {
+        column = column.push(
+            image::viewer(images.layer1[0].clone())
+                .content_fit(iced::ContentFit::Contain)
+                .filter_method(image::FilterMethod::Nearest)
+                .min_scale(1.0)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        );
+    }
+    column.spacing(10).padding(10).into()
 }
 
 fn main() -> Result<()> {
