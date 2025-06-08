@@ -72,6 +72,7 @@ struct State {
     room_state: RoomState,
     show_layer_1: bool,
     show_layer_2: bool,
+    highlight_transparency: bool,
     pixel_size: f32,
     source_selection: SourceSelection,
     working_images: Option<RoomData>,
@@ -101,6 +102,7 @@ enum Message {
     SelectSource(SourceSelection),
     ShowLayer1(bool),
     ShowLayer2(bool),
+    HighlightTransparency(bool),
 }
 
 fn get_initial_state() -> Result<State> {
@@ -142,6 +144,7 @@ fn get_initial_state() -> Result<State> {
         room_state: RoomState(0, String::new()),
         show_layer_1: true,
         show_layer_2: true,
+        highlight_transparency: false,
         source_selection: SourceSelection::WorkingCopy,
         pixel_size: 1.0,
         working_images: None,
@@ -267,6 +270,19 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
                 "2" => {
                     state.show_layer_2 = !state.show_layer_2;
                 }
+                "w" => {
+                    state.source_selection = SourceSelection::WorkingCopy;
+                }
+                "r" => {
+                    state.source_selection =
+                        SourceSelection::GitReference(state.git_reference.clone());
+                }
+                "d" => {
+                    state.source_selection = SourceSelection::Difference;
+                }
+                "t" => {
+                    state.highlight_transparency = !state.highlight_transparency;
+                }
                 "-" => {
                     state.pixel_size = (state.pixel_size - 1.0).max(MIN_PIXEL_SIZE);
                 }
@@ -294,6 +310,9 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
         }
         Message::ShowLayer2(b) => {
             state.show_layer_2 = b;
+        }
+        Message::HighlightTransparency(b) => {
+            state.highlight_transparency = b;
         }
     }
     Ok(Task::none())
@@ -340,6 +359,20 @@ impl<'a> canvas::Program<Message> for RoomCanvas<'a> {
             },
         );
 
+        let bg_color = if state.highlight_transparency {
+            iced::Color::from_rgb8(255, 105, 180)
+        } else {
+            iced::Color::BLACK
+        };
+        frame.fill_rectangle(
+            Point { x: 0.0, y: 0.0 },
+            Size {
+                width: width as f32 * state.pixel_size,
+                height: height as f32 * state.pixel_size,
+            },
+            bg_color,
+        );
+
         let images = match state.source_selection {
             SourceSelection::WorkingCopy => state.working_images.as_ref().unwrap(),
             SourceSelection::GitReference(_) => state.other_images.as_ref().unwrap(),
@@ -374,6 +407,8 @@ fn view(state: &State) -> Element<Message> {
         combo_box(&state.room_list, "", Some(&state.room), Message::SelectRoom,),
         checkbox("Show layer 1", state.show_layer_1).on_toggle(Message::ShowLayer1),
         checkbox("Show layer 2", state.show_layer_2).on_toggle(Message::ShowLayer2),
+        checkbox("Highlight transparency", state.highlight_transparency)
+            .on_toggle(Message::HighlightTransparency),
         pick_list(
             [
                 SourceSelection::WorkingCopy,
@@ -436,7 +471,5 @@ fn main() -> Result<()> {
         })
         .run_with(|| (state, Task::none()))?;
 
-    // let b = repo.find_branch(&args.reference, git2::BranchType::Local)?;
-    // println!("branch: {:?}", b.name());
     Ok(())
 }
