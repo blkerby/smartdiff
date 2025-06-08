@@ -1,34 +1,9 @@
-use crate::smart_xml::{self, BGData, Screen, from_hex_words};
+use crate::{
+    file_system::FileSystem,
+    smart_xml::{self, BGData, Screen},
+};
 use anyhow::{Context, Result};
-use log::info;
 use std::path::Path;
-
-// Trait to abstract over whether we are using the local file system (for working copy)
-// or git tree (for comparison branch)
-pub trait FileSystem {
-    fn load(&self, path: &Path) -> Result<Vec<u8>>;
-}
-
-pub struct GitTreeFileSystem<'a> {
-    repo: &'a git2::Repository,
-    tree: git2::Tree<'a>,
-}
-
-impl<'a> FileSystem for GitTreeFileSystem<'a> {
-    fn load(&self, path: &Path) -> Result<Vec<u8>> {
-        let obj = self.tree.get_path(path)?.to_object(&self.repo)?;
-        let blob = obj.as_blob().context("as_blob")?;
-        Ok(blob.content().to_vec())
-    }
-}
-
-pub struct LocalFileSystem {}
-
-impl FileSystem for LocalFileSystem {
-    fn load(&self, path: &Path) -> Result<Vec<u8>> {
-        Ok(std::fs::read(path)?)
-    }
-}
 
 type Color = [u8; 3];
 
@@ -40,7 +15,7 @@ pub struct Image {
 }
 
 impl Image {
-    fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
             height,
@@ -48,7 +23,12 @@ impl Image {
         }
     }
 
-    fn put_pixel(&mut self, x: usize, y: usize, color: Color) {
+    pub fn get_pixel(&self, x: usize, y: usize) -> Color {
+        let i = (y * self.width + x) * 4;
+        [self.pixels[i], self.pixels[i + 1], self.pixels[i + 2]]
+    }
+
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
         let i = (y * self.width + x) * 4;
         self.pixels[i] = color[0];
         self.pixels[i + 1] = color[1];
@@ -220,7 +200,7 @@ fn render_tile_8x8(image: &mut Image, x0: usize, y0: usize, tile: Tile8x8, tiles
             }
             let color_idx = tile.palette * 16 + (gfx[y1][x1] as usize);
             let color = tileset.palette[color_idx];
-            image.put_pixel(x0 + x, y0 + y, color);
+            image.set_pixel(x0 + x, y0 + y, color);
         }
     }
 }
@@ -318,8 +298,10 @@ pub fn render_room<F: FileSystem>(
     file_system: &F,
 ) -> Result<RoomImages> {
     let room_path = project_dir.join(format!("Export/Rooms/{}.xml", room_name));
-    let room_str = std::fs::read_to_string(&room_path)
+    let room_bytes = file_system
+        .load(&room_path)
         .with_context(|| format!("Unable to load room at {}", room_path.display()))?;
+    let room_str = String::from_utf8(room_bytes)?;
     let room: smart_xml::Room = serde_xml_rs::from_str(room_str.as_str())
         .with_context(|| format!("Unable to parse XML in {}", room_path.display()))?;
 

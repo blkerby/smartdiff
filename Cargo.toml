@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { version= "0.13.1", features = ["image"] }
+iced = { version= "0.13.1", features = ["image", "canvas"] }
 clap = { version = "4.5.39", features = ["derive"] }
 git2 = "0.20.2"
 anyhow = "1.0.98"
@@ -14,3 +14,4 @@ env_logger = "0.11.8"
 hashbrown = "0.15.4"
 serde = "1.0.219"
 serde-xml-rs = "0.6.0"
+dark-light = "2.0.0"
