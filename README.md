@@ -1,6 +1,8 @@
 # smartdiff
 
-This is a tool to compare and highlight differences between versions of rooms in Super Metroid SMART projects. It will compare the working copy against a selected git reference. Example invocations:
+This is a command-line tool to compare and highlight differences between versions of rooms in Super Metroid SMART projects. It will compare the working copy against a selected git reference. Download the latest version from the [Releases](https://github.com/blkerby/smartdiff/releases) page.
+
+Here are example ways to use it:
 
 - Compare against HEAD: 
 
