@@ -49,7 +49,7 @@ struct Tile8x8 {
     palette: usize,
     flip_x: bool,
     flip_y: bool,
-    priority: bool,
+    _priority: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -95,7 +95,7 @@ fn decode_8x8_tile(x: u16) -> Tile8x8 {
     Tile8x8 {
         idx: (x & 0x3FF) as usize,
         palette: ((x >> 10) & 7) as usize,
-        priority: ((x >> 13) & 1) == 1,
+        _priority: ((x >> 13) & 1) == 1,
         flip_x: ((x >> 14) & 1) == 1,
         flip_y: ((x >> 15) & 1) == 1,
     }

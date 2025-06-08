@@ -2,10 +2,7 @@ mod file_system;
 mod room;
 mod smart_xml;
 
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Display, path::PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -13,9 +10,8 @@ use git2::Repository;
 use iced::{
     Element, Length, Point, Rectangle, Size, Subscription, Task, Theme, keyboard,
     widget::{
-        self, ComboBox, Scrollable, canvas, checkbox, column, combo_box, image, pick_list, row,
+        Scrollable, canvas, checkbox, column, combo_box, image, pick_list, row,
         scrollable::{self, Scrollbar},
-        text,
     },
 };
 use log::{error, info};

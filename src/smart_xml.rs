@@ -32,46 +32,6 @@ where
     Ok(out)
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct FX1 {
-    #[serde(deserialize_with = "from_hex", default)]
-    pub roomarea: usize,
-    #[serde(deserialize_with = "from_hex", default)]
-    pub roomindex: usize,
-    #[serde(deserialize_with = "from_hex", default)]
-    pub fromdoor: usize,
-    #[serde(default)]
-    pub default: bool,
-    #[serde(deserialize_with = "from_hex")]
-    pub surfacestart: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub surfacenew: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub surfacespeed: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub surfacedelay: usize,
-    #[serde(rename = "type", deserialize_with = "from_hex")]
-    pub type_: usize,
-    #[serde(rename = "transparency1_A", deserialize_with = "from_hex")]
-    pub transparency1_a: usize,
-    #[serde(rename = "transparency2_B", deserialize_with = "from_hex")]
-    pub transparency2_b: usize,
-    #[serde(rename = "liquidflags_C", deserialize_with = "from_hex")]
-    pub liquidflags_c: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub paletteflags: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub animationflags: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub paletteblend: usize,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct FX1List {
-    #[serde(rename = "FX1", default)]
-    pub fx1: Vec<FX1>,
-}
-
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
 pub enum Layer2Type {
     Layer2,
@@ -101,21 +61,9 @@ pub struct Layer2 {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct BTS {
-    #[serde(rename = "Screen")]
-    pub screen: Vec<Screen>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct LevelData {
-    #[serde(rename = "Width", deserialize_with = "from_hex")]
-    pub width: usize,
-    #[serde(rename = "Height", deserialize_with = "from_hex")]
-    pub height: usize,
     #[serde(rename = "Layer1")]
     pub layer_1: Layer1,
-    #[serde(rename = "BTS")]
-    pub bts: BTS,
     #[serde(rename = "Layer2", default)]
     pub layer_2: Layer2,
 }
@@ -145,21 +93,10 @@ pub struct RoomState {
     pub arg: usize,
     #[serde(rename = "GFXset", deserialize_with = "from_hex")]
     pub gfx_set: usize,
-    #[serde(rename = "FX1s")]
-    pub fx1s: FX1List,
     #[serde(rename = "LevelData")]
     pub level_data: LevelData,
-    pub layer2_type: Layer2Type,
-    #[serde(deserialize_with = "from_hex")]
-    pub layer2_xscroll: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub layer2_yscroll: usize,
     #[serde(rename = "BGData")]
     pub bg_data: BGData,
-    #[serde(rename = "FX2", deserialize_with = "from_hex")]
-    pub fx2: usize,
-    #[serde(rename = "layer1_2", deserialize_with = "from_hex")]
-    pub layer1_2: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -170,12 +107,6 @@ pub struct RoomStateList {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Room {
-    #[serde(deserialize_with = "from_hex")]
-    pub area: usize,
-    #[serde(deserialize_with = "from_hex")]
-    pub index: usize,
-    #[serde(rename = "specialGFX", deserialize_with = "from_hex")]
-    pub special_gfx: usize,
     #[serde(deserialize_with = "from_hex")]
     pub width: usize,
     #[serde(deserialize_with = "from_hex")]
