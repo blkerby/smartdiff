@@ -1,0 +1,3 @@
+[submodule "ci/rust-build.action"]
+	path = ci/rust-build.action
+	url = git@github.com:blkerby/rust-build.action.git
