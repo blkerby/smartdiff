@@ -263,7 +263,7 @@ fn diff_image(img1: &room::Image, img2: &room::Image, baseline: f32) -> room::Im
             let p2 = img2.get_pixel(x, y);
             if p1 != p2 {
                 img.set_pixel(x, y, [255, 255, 255]);
-            } else {
+            } else if !img1.get_transparent(x, y) {
                 img.set_pixel(
                     x,
                     y,

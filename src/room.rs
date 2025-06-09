@@ -28,6 +28,11 @@ impl Image {
         [self.pixels[i], self.pixels[i + 1], self.pixels[i + 2]]
     }
 
+    pub fn get_transparent(&self, x: usize, y: usize) -> bool {
+        let i = (y * self.width + x) * 4;
+        self.pixels[i + 3] == 0
+    }
+
     pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
         let i = (y * self.width + x) * 4;
         self.pixels[i] = color[0];
