@@ -198,7 +198,9 @@ fn refresh_modified_room_list(state: &mut State) -> Result<()> {
 
     let reference = state.repo.revparse_single(&state.git_reference)?;
     let tree = reference.peel_to_tree()?;
-    let diff = state.repo.diff_tree_to_workdir(Some(&tree), None)?;
+    let diff = state
+        .repo
+        .diff_tree_to_workdir_with_index(Some(&tree), None)?;
     let mut modified_room_list: Vec<ModifiedRoom> = vec![];
     for d in diff.deltas() {
         if let Some(path) = d.new_file().path() {
