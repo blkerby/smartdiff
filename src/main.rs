@@ -95,6 +95,7 @@ enum Message {
     Event(iced::Event),
     SelectProject(Project),
     SelectRoom(Room),
+    SelectRoomState(RoomState),
     SelectSource(SourceSelection),
     ShowLayer1(bool),
     ShowLayer2(bool),
@@ -218,7 +219,7 @@ fn refresh_room_images(state: &mut State) -> Result<()> {
     let width = working_images.layer1[0].width;
     let height = working_images.layer1[0].height;
 
-    let reference = state.repo.find_reference(&state.git_reference)?;
+    let reference = state.repo.revparse_single(&state.git_reference)?;
     let tree = reference.peel_to_tree()?;
     let other_fs = GitTreeFileSystem {
         repo: &state.repo,
@@ -298,6 +299,9 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
             state.room = room;
             refresh_room_images(state)?;
         }
+        Message::SelectRoomState(room_state) => {
+            state.room_state = room_state;
+        }
         Message::SelectSource(src) => {
             state.source_selection = src;
         }
@@ -374,17 +378,20 @@ impl<'a> canvas::Program<Message> for RoomCanvas<'a> {
             SourceSelection::GitReference(_) => state.other_images.as_ref().unwrap(),
             SourceSelection::Difference => state.diff_images.as_ref().unwrap(),
         };
+        let state_idx = state.room_state.0;
 
         if state.show_layer_2 {
             frame.draw_image(
                 rect,
-                canvas::Image::new(&images.layer2[0]).filter_method(image::FilterMethod::Nearest),
+                canvas::Image::new(&images.layer2[state_idx])
+                    .filter_method(image::FilterMethod::Nearest),
             );
         }
         if state.show_layer_1 {
             frame.draw_image(
                 rect,
-                canvas::Image::new(&images.layer1[0]).filter_method(image::FilterMethod::Nearest),
+                canvas::Image::new(&images.layer1[state_idx])
+                    .filter_method(image::FilterMethod::Nearest),
             );
         }
 
@@ -400,7 +407,13 @@ fn view(state: &State) -> Element<Message> {
             Some(&state.project),
             Message::SelectProject,
         ),
-        combo_box(&state.room_list, "", Some(&state.room), Message::SelectRoom,),
+        combo_box(&state.room_list, "", Some(&state.room), Message::SelectRoom),
+        combo_box(
+            &state.room_state_list,
+            "",
+            Some(&state.room_state),
+            Message::SelectRoomState
+        ),
         checkbox("Show layer 1", state.show_layer_1).on_toggle(Message::ShowLayer1),
         checkbox("Show layer 2", state.show_layer_2).on_toggle(Message::ShowLayer2),
         checkbox("Highlight transparency", state.highlight_transparency)
