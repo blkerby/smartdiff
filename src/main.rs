@@ -7,13 +7,15 @@ use std::{fmt::Display, path::PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use git2::Repository;
+use hashbrown::HashMap;
 use iced::{
-    Element, Length, Point, Rectangle, Size, Subscription, Task, Theme, keyboard,
+    Element, Font, Length, Point, Rectangle, Size, Subscription, Task, Theme, keyboard,
     widget::{
         Scrollable, canvas, checkbox, column, combo_box, image, pick_list, row,
         scrollable::{self, Scrollbar},
     },
 };
+use iced_aw::SelectionList;
 use log::{error, info};
 
 use crate::file_system::{GitTreeFileSystem, LocalFileSystem};
@@ -27,11 +29,11 @@ struct Args {
     reference: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 struct Project(PathBuf);
 type Room = String;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
 struct RoomState(usize, String);
 
 impl Display for RoomState {
@@ -57,6 +59,24 @@ impl Display for SourceSelection {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+struct ModifiedRoom {
+    project: Project,
+    room_name: String,
+}
+
+impl Display for ModifiedRoom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let project_short_name = self.project.0.components().last().unwrap().as_os_str();
+        write!(
+            f,
+            "{}/{}",
+            project_short_name.to_str().unwrap(),
+            self.room_name,
+        )
+    }
+}
+
 struct State {
     repo: git2::Repository,
     git_reference: String,
@@ -66,6 +86,8 @@ struct State {
     room: String,
     room_state_list: combo_box::State<RoomState>,
     room_state: RoomState,
+    modified_room_list: Vec<ModifiedRoom>,
+    modified_room_idx: Option<usize>,
     show_layer_1: bool,
     show_layer_2: bool,
     highlight_transparency: bool,
@@ -100,6 +122,7 @@ enum Message {
     ShowLayer1(bool),
     ShowLayer2(bool),
     HighlightTransparency(bool),
+    SelectModifiedRoom(usize),
 }
 
 fn get_initial_state() -> Result<State> {
@@ -139,6 +162,8 @@ fn get_initial_state() -> Result<State> {
         room: String::new(),
         room_state_list: combo_box::State::new(vec![]),
         room_state: RoomState(0, String::new()),
+        modified_room_list: vec![],
+        modified_room_idx: None,
         show_layer_1: true,
         show_layer_2: true,
         highlight_transparency: false,
@@ -148,13 +173,47 @@ fn get_initial_state() -> Result<State> {
         other_images: None,
         diff_images: None,
     };
+    refresh_modified_room_list(&mut state)?;
     refresh_room_list(&mut state)?;
     refresh_room_images(&mut state)?;
 
     Ok(state)
 }
 
+fn refresh_modified_room_list(state: &mut State) -> Result<()> {
+    // List modified rooms across all projects
+    let mut room_map: HashMap<PathBuf, ModifiedRoom> = HashMap::new();
+    for project in state.project_list.options() {
+        for room in glob::glob(&format!("{}/Export/Rooms/*.xml", project))? {
+            let room = room?;
+            room_map.insert(
+                room.clone(),
+                ModifiedRoom {
+                    project: project.clone(),
+                    room_name: room.file_stem().unwrap().to_str().unwrap().to_string(),
+                },
+            );
+        }
+    }
+
+    let reference = state.repo.revparse_single(&state.git_reference)?;
+    let tree = reference.peel_to_tree()?;
+    let diff = state.repo.diff_tree_to_workdir(Some(&tree), None)?;
+    let mut modified_room_list: Vec<ModifiedRoom> = vec![];
+    for d in diff.deltas() {
+        if let Some(path) = d.new_file().path() {
+            if room_map.contains_key(path) {
+                modified_room_list.push(room_map[path].clone());
+            }
+        }
+    }
+    modified_room_list.sort();
+    state.modified_room_list = modified_room_list;
+    Ok(())
+}
+
 fn refresh_room_list(state: &mut State) -> Result<()> {
+    // List rooms in current project:
     let mut room_list: Vec<String> = vec![];
     for room in glob::glob(&format!("{}/Export/Rooms/*.xml", state.project))? {
         let room = room?;
@@ -288,6 +347,32 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
                 }
                 _ => {}
             },
+            iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::ArrowDown),
+                ..
+            }) => {
+                let new_idx = match state.modified_room_idx {
+                    Some(idx) => idx + 1,
+                    None => 0,
+                };
+                if new_idx < state.modified_room_list.len() {
+                    state.modified_room_idx = Some(new_idx);
+                    return Ok(Task::done(Message::SelectModifiedRoom(new_idx)));
+                }
+            }
+            iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::ArrowUp),
+                ..
+            }) => {
+                let new_idx = match state.modified_room_idx {
+                    Some(idx) if idx > 0 => idx - 1,
+                    _ => 0,
+                };
+                if new_idx < state.modified_room_list.len() {
+                    state.modified_room_idx = Some(new_idx);
+                    return Ok(Task::done(Message::SelectModifiedRoom(new_idx)));
+                }
+            }
             _ => {}
         },
         Message::SelectProject(project) => {
@@ -313,6 +398,17 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
         }
         Message::HighlightTransparency(b) => {
             state.highlight_transparency = b;
+        }
+        Message::SelectModifiedRoom(idx) => {
+            state.modified_room_idx = Some(idx);
+            let modified_room = &state.modified_room_list[idx];
+            let project_changed = state.project != modified_room.project;
+            state.project = modified_room.project.clone();
+            state.room = modified_room.room_name.clone();
+            if project_changed {
+                refresh_room_list(state)?;
+            }
+            refresh_room_images(state)?;
         }
     }
     Ok(Task::none())
@@ -427,6 +523,15 @@ fn view(state: &State) -> Element<Message> {
             Some(&state.source_selection),
             Message::SelectSource,
         ),
+        SelectionList::new_with(
+            &state.modified_room_list,
+            |idx, _| Message::SelectModifiedRoom(idx),
+            14.0,
+            5.0,
+            iced_aw::style::selection_list::primary,
+            state.modified_room_idx.clone(),
+            Font::default(),
+        )
     ]
     .spacing(10);
 
