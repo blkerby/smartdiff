@@ -7,7 +7,7 @@ use std::path::Path;
 
 type Color = [u8; 3];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Image {
     pub width: usize,
     pub height: usize,
@@ -37,6 +37,7 @@ impl Image {
     }
 }
 
+#[derive(Clone)]
 pub struct RoomImages {
     pub room_state_names: Vec<String>,
     pub layer1: Vec<Image>,

@@ -13,13 +13,17 @@ use iced::{
     widget::{
         Scrollable, canvas, checkbox, column, combo_box, image, pick_list, row,
         scrollable::{self, Scrollbar},
+        slider, text,
     },
 };
 use iced_aw::SelectionList;
 use log::{error, info};
 
-use crate::file_system::{GitTreeFileSystem, LocalFileSystem};
 use crate::room::render_room;
+use crate::{
+    file_system::{GitTreeFileSystem, LocalFileSystem},
+    room::RoomImages,
+};
 
 pub const MIN_PIXEL_SIZE: f32 = 1.0;
 pub const MAX_PIXEL_SIZE: f32 = 8.0;
@@ -91,11 +95,14 @@ struct State {
     show_layer_1: bool,
     show_layer_2: bool,
     highlight_transparency: bool,
+    difference_baseline: f32,
     pixel_size: f32,
     source_selection: SourceSelection,
-    working_images: Option<RoomData>,
-    other_images: Option<RoomData>,
-    diff_images: Option<RoomData>,
+    working_images: Option<RoomImages>,
+    other_images: Option<RoomImages>,
+    working_image_handles: Option<RoomData>,
+    other_image_handles: Option<RoomData>,
+    diff_image_handles: Option<RoomData>,
 }
 
 #[derive(Clone)]
@@ -122,6 +129,7 @@ enum Message {
     ShowLayer1(bool),
     ShowLayer2(bool),
     HighlightTransparency(bool),
+    AdjustDifferenceBaseline(f32),
     SelectModifiedRoom(usize),
 }
 
@@ -167,11 +175,14 @@ fn get_initial_state() -> Result<State> {
         show_layer_1: true,
         show_layer_2: true,
         highlight_transparency: false,
+        difference_baseline: 0.3,
         source_selection: SourceSelection::WorkingCopy,
         pixel_size: 1.0,
         working_images: None,
         other_images: None,
-        diff_images: None,
+        working_image_handles: None,
+        other_image_handles: None,
+        diff_image_handles: None,
     };
     refresh_modified_room_list(&mut state)?;
     refresh_room_list(&mut state)?;
@@ -244,23 +255,60 @@ fn convert_images(images: Vec<room::Image>) -> Vec<image::Handle> {
         .collect()
 }
 
-fn diff_image(img1: &room::Image, img2: &room::Image) -> room::Image {
+fn diff_image(img1: &room::Image, img2: &room::Image, baseline: f32) -> room::Image {
     let mut img = room::Image::new(img1.width, img1.height);
     for y in 0..img.height {
         for x in 0..img.width {
-            if img1.get_pixel(x, y) != img2.get_pixel(x, y) {
+            let p1 = img1.get_pixel(x, y);
+            let p2 = img2.get_pixel(x, y);
+            if p1 != p2 {
                 img.set_pixel(x, y, [255, 255, 255]);
+            } else {
+                img.set_pixel(
+                    x,
+                    y,
+                    [
+                        (p1[0] as f32 * baseline) as u8,
+                        (p1[1] as f32 * baseline) as u8,
+                        (p1[2] as f32 * baseline) as u8,
+                    ],
+                );
             }
         }
     }
     img
 }
 
-fn diff_image_list(img1: &[room::Image], img2: &[room::Image]) -> Vec<room::Image> {
+fn diff_image_list(img1: &[room::Image], img2: &[room::Image], baseline: f32) -> Vec<room::Image> {
     img1.iter()
         .zip(img2.iter())
-        .map(|(x, y)| diff_image(x, y))
+        .map(|(x, y)| diff_image(x, y, baseline))
         .collect()
+}
+
+fn refresh_diff_images(state: &mut State) -> Result<()> {
+    let Some(working_images) = state.working_images.as_ref() else {
+        return Ok(());
+    };
+    let Some(other_images) = state.other_images.as_ref() else {
+        return Ok(());
+    };
+
+    state.diff_image_handles = Some(RoomData {
+        width: working_images.layer1[0].width,
+        height: working_images.layer1[0].height,
+        layer1: convert_images(diff_image_list(
+            &working_images.layer1,
+            &other_images.layer1,
+            state.difference_baseline,
+        )),
+        layer2: convert_images(diff_image_list(
+            &working_images.layer2,
+            &other_images.layer2,
+            state.difference_baseline,
+        )),
+    });
+    Ok(())
 }
 
 fn refresh_room_images(state: &mut State) -> Result<()> {
@@ -268,7 +316,8 @@ fn refresh_room_images(state: &mut State) -> Result<()> {
     let working_images = render_room(&state.project.0, &state.room, &working_fs)?;
     let room_states: Vec<RoomState> = working_images
         .room_state_names
-        .into_iter()
+        .iter()
+        .cloned()
         .enumerate()
         .map(|(i, x)| RoomState(i, x))
         .collect();
@@ -288,30 +337,23 @@ fn refresh_room_images(state: &mut State) -> Result<()> {
     };
     let other_images = render_room(&state.project.0, &state.room, &other_fs)?;
 
-    state.diff_images = Some(RoomData {
-        width,
-        height,
-        layer1: convert_images(diff_image_list(
-            &working_images.layer1,
-            &other_images.layer1,
-        )),
-        layer2: convert_images(diff_image_list(
-            &working_images.layer2,
-            &other_images.layer2,
-        )),
-    });
-    state.working_images = Some(RoomData {
+    state.working_images = Some(working_images.clone());
+    state.other_images = Some(other_images.clone());
+    state.working_image_handles = Some(RoomData {
         width,
         height,
         layer1: convert_images(working_images.layer1),
         layer2: convert_images(working_images.layer2),
     });
-    state.other_images = Some(RoomData {
+    state.other_image_handles = Some(RoomData {
         width,
         height,
         layer1: convert_images(other_images.layer1),
         layer2: convert_images(other_images.layer2),
     });
+    drop(reference);
+    drop(other_fs);
+    refresh_diff_images(state)?;
     Ok(())
 }
 
@@ -401,6 +443,10 @@ fn try_update(state: &mut State, message: Message) -> Result<Task<Message>> {
         Message::HighlightTransparency(b) => {
             state.highlight_transparency = b;
         }
+        Message::AdjustDifferenceBaseline(f) => {
+            state.difference_baseline = f;
+            refresh_diff_images(state)?;
+        }
         Message::SelectModifiedRoom(idx) => {
             state.modified_room_idx = Some(idx);
             let modified_room = &state.modified_room_list[idx];
@@ -444,7 +490,7 @@ impl<'a> canvas::Program<Message> for RoomCanvas<'a> {
         let state = self.state;
         let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-        let Some(working_images) = &state.working_images else {
+        let Some(working_images) = &state.working_image_handles else {
             return vec![];
         };
         let width = working_images.width;
@@ -472,9 +518,9 @@ impl<'a> canvas::Program<Message> for RoomCanvas<'a> {
         );
 
         let images = match state.source_selection {
-            SourceSelection::WorkingCopy => state.working_images.as_ref().unwrap(),
-            SourceSelection::GitReference(_) => state.other_images.as_ref().unwrap(),
-            SourceSelection::Difference => state.diff_images.as_ref().unwrap(),
+            SourceSelection::WorkingCopy => state.working_image_handles.as_ref().unwrap(),
+            SourceSelection::GitReference(_) => state.other_image_handles.as_ref().unwrap(),
+            SourceSelection::Difference => state.diff_image_handles.as_ref().unwrap(),
         };
         let state_idx = state.room_state.0;
 
@@ -512,10 +558,23 @@ fn view(state: &State) -> Element<Message> {
             Some(&state.room_state),
             Message::SelectRoomState
         ),
-        checkbox("Show layer 1", state.show_layer_1).on_toggle(Message::ShowLayer1),
-        checkbox("Show layer 2", state.show_layer_2).on_toggle(Message::ShowLayer2),
+        row![
+            checkbox("Show layer 1", state.show_layer_1).on_toggle(Message::ShowLayer1),
+            checkbox("Show layer 2", state.show_layer_2).on_toggle(Message::ShowLayer2),
+        ]
+        .spacing(10),
         checkbox("Highlight transparency", state.highlight_transparency)
             .on_toggle(Message::HighlightTransparency),
+        row![
+            text("Difference baseline"),
+            slider(
+                0.0..=1.0,
+                state.difference_baseline,
+                Message::AdjustDifferenceBaseline
+            )
+            .step(0.01)
+        ]
+        .spacing(10),
         pick_list(
             [
                 SourceSelection::WorkingCopy,
@@ -539,7 +598,7 @@ fn view(state: &State) -> Element<Message> {
 
     let mut width = 256;
     let mut height = 256;
-    if let Some(working_images) = &state.working_images {
+    if let Some(working_images) = &state.working_image_handles {
         width = working_images.width;
         height = working_images.height;
     }
